@@ -3,18 +3,16 @@
  * Gemini API呼び出し専用モジュール（クライアント側）
  *
  * - APIキーはNetlify Function内に保護済み
- * - 429レート制限時は指数バックオフで自動リトライ
- * - リトライ中はUI側にカウントダウンを通知
+ * - エラー時は1回リトライ（有料プラン向け軽量設定）
  */
 
 const GEMINI_API = {
   PROXY_URL: '/.netlify/functions/gemini-proxy',
 
-  // 指数バックオフ設定
   RETRY_CONFIG: {
-    maxRetries: 3,
-    baseDelayMs: 5000,   // 初回待機 5秒
-    maxDelayMs: 60000,   // 最大待機 60秒
+    maxRetries: 1,
+    baseDelayMs: 2000,   // 待機 2秒
+    maxDelayMs: 10000,   // 最大待機 10秒
   },
 
   /**
@@ -78,7 +76,7 @@ const GEMINI_API = {
         // リトライ上限超過
         const waitSec = Math.ceil(waitMs / 1000);
         throw new GeminiError(
-          `リクエスト制限に達しました。${waitSec}秒後に再試行してください。（無料枠: ${data?.rpm ?? '?'}RPM / ${data?.rpd ?? '?'}RPD）`,
+          `リクエスト制限に達しました。${waitSec}秒後に再試行してください。`,
           'RATE_LIMIT',
           { retryAfterMs: waitMs }
         );

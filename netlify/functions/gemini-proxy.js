@@ -1,24 +1,19 @@
 /**
  * netlify/functions/gemini-proxy.js
  *
- * Gemini APIへのセキュアなプロキシ関数。
+ * Gemini APIへのセキュアなプロキシ関数（有料プラン向け）。
  * - APIキーはNetlify環境変数 GEMINI_API_KEY に保護
- * - モデル自動フォールバック（3.1 Flash-Lite → 2.0 Flash → 1.5 Flash）
- * - 429レート制限時はクライアントに retryAfter を通知
+ * - gemini-2.5-flash をメインモデルとして使用
+ * - Netlifyタイムアウト10秒に対し、8秒でGemini側をAbort
  */
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-// 無料枠レート制限（2026年4月時点）
-// モデルを制限の緩いものから順に並べる
-// RPM: 分間リクエスト数 / RPD: 日間リクエスト数
 const MODELS = [
-  { id: 'gemini-2.5-flash',      rpm: 10, rpd: 500  },  // メイン（高性能）
-  { id: 'gemini-2.0-flash',      rpm: 15, rpd: 1500 },  // フォールバック1
-  { id: 'gemini-1.5-flash',      rpm: 15, rpd: 1500 },  // フォールバック2
+  { id: 'gemini-2.5-flash' },  // メイン
+  { id: 'gemini-2.0-flash' },  // フォールバック（メンテナンス時等）
 ];
 
-// Netlify無料枠タイムアウト10秒に対し、8秒でGemini側をAbort
 const GEMINI_TIMEOUT_MS = 8000;
 
 /**
@@ -30,7 +25,7 @@ async function callGemini(modelId, prompt, apiKey) {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 3000,   // 504対策: 出力を抑えてレスポンスを高速化
+      maxOutputTokens: 8192,
       responseMimeType: 'application/json',
     },
   };
@@ -141,9 +136,9 @@ exports.handler = async (event) => {
     const errMsg = data?.error?.message || `HTTP ${status}`;
     console.warn(`[gemini-proxy] ${model.id} → ${status}: ${errMsg}`);
 
-    // レート制限（429）: クライアントに retryAfter を返してフォールバックしない
+    // レート制限（429）: クライアントに retryAfter を返す
     if (status === 429) {
-      const retryAfterSec = parseInt(res.headers.get('retry-after') || '60', 10);
+      const retryAfterSec = parseInt(res.headers.get('retry-after') || '10', 10);
       return {
         statusCode: 429,
         headers: { ...headers, 'Retry-After': String(retryAfterSec) },
@@ -151,8 +146,6 @@ exports.handler = async (event) => {
           error: 'rate_limit',
           retryAfter: retryAfterSec,
           model: model.id,
-          rpm: model.rpm,
-          rpd: model.rpd,
         }),
       };
     }

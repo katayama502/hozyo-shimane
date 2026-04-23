@@ -23,9 +23,8 @@ const GEMINI_TIMEOUT_MS  = 8000;                      // Netlify 10s枠に対し
 const GEMINI_BASE_URL    = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 const GEMINI_MODELS = [
-  { id: 'gemini-2.5-flash' },
-  { id: 'gemini-2.0-flash' },
-  { id: 'gemini-1.5-flash' },
+  { id: 'gemini-2.5-flash' },  // メイン
+  { id: 'gemini-2.0-flash' },  // フォールバック（メンテナンス時等）
 ];
 
 // ==================== Gemini呼び出し ====================
@@ -91,7 +90,7 @@ async function callGemini(modelId, prompt, apiKey) {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 3000,
+      maxOutputTokens: 8192,
       responseMimeType: 'application/json',
     },
   };
