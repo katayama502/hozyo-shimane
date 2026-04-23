@@ -7,81 +7,50 @@
  *   1. Firestore から現在のデータを読み取る（公開エンドポイント）
  *   2. データが新鮮（7日以内）なら即座にクライアントへ返す
  *   3. データが古い（7日超）or 未作成なら：
- *      a. Gemini API で15件の補助金データを生成
- *      b. サービスアカウント JWT（RS256）でGoogle OAuth トークンを取得
- *      c. Firestore にデータを書き込む
- *      d. 最新データをクライアントへ返す
+ *      a. Gemini呼び出し と OAuth取得を【並列実行】（時間短縮の核心）
+ *      b. Firestore にデータを書き込む
+ *      c. 最新データをクライアントへ返す
+ *
+ * タイムライン（Netlify 10s制限内）:
+ *   Firestore読取 (〜300ms)
+ *   └→ [Gemini呼出 (〜4s)] 並列 [OAuth取得 (〜400ms)]
+ *      └→ Firestore書込 (〜300ms)
+ *   合計: 約5s ← 余裕あり
  *
  * 必要な環境変数（Netlify）:
- *   GEMINI_API_KEY         - Gemini API キー
- *   FIREBASE_PROJECT_ID    - Firebase プロジェクトID
+ *   GEMINI_API_KEY           - Gemini API キー
+ *   FIREBASE_PROJECT_ID      - Firebase プロジェクトID
  *   FIREBASE_SERVICE_ACCOUNT - サービスアカウントJSONの全文字列
  */
 
+// crypto は動的importではなくモジュールレベルで読み込む（初回オーバーヘッド排除）
+const { webcrypto } = require('node:crypto');
+
 const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000; // 7日
-const GEMINI_TIMEOUT_MS  = 8000;                      // Netlify 10s枠に対して8s
+const GEMINI_TIMEOUT_MS  = 20000;                     // 26s枠に対して20s（OAuth/書込分を確保）
 const GEMINI_BASE_URL    = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 const GEMINI_MODELS = [
   { id: 'gemini-2.5-flash' },  // メイン
-  { id: 'gemini-2.0-flash' },  // フォールバック（メンテナンス時等）
+  { id: 'gemini-2.0-flash' },  // フォールバック
 ];
 
 // ==================== Gemini呼び出し ====================
 
 function buildSubsidyPrompt() {
-  return `
-あなたは島根県の補助金・助成金制度に精通した専門家です。
-2026年現在、島根県内で申請可能または近日中に申請受付が予定されている補助金・助成金・支援制度を15件リストアップしてください。
+  return `あなたは島根県の補助金・助成金制度に精通した専門家です。
+2026年現在、島根県内で申請可能または近日中に申請受付が予定されている補助金・助成金・支援制度を25件リストアップしてください。
 
-以下のカテゴリから各2〜3件を目安に選んでください：
-- 農業・林業・水産業
-- 中小企業・創業支援
-- 移住・定住支援
-- 子育て・教育
-- 住宅・リフォーム
-- ITデジタル化
+以下のカテゴリから各3〜5件を目安に選んでください：農業・林業・水産業、中小企業・創業支援、移住・定住支援、子育て・教育、住宅・リフォーム、ITデジタル化
 
 国の補助金で島根県民も対象になるものも含めてください（例：ものづくり補助金、IT導入補助金等）。
+松江市・出雲市・浜田市など市町村独自の補助金も含めてください。
 
 以下のJSON形式のみで返してください（説明文・マークダウン等は一切不要）：
 
-{
-  "subsidies": [
-    {
-      "id": "shimane-001",
-      "title": "補助金・助成金の正式名称",
-      "simpleDescription": "一般の方にわかりやすい説明（60文字以内）",
-      "description": "補助金の詳細説明（200文字以内）",
-      "category": "農業・林業・水産業",
-      "targetUsers": ["農業従事者", "新規就農者"],
-      "maxAmount": 1000000,
-      "deadline": "2026-06-30",
-      "issuer": "島根県",
-      "region": "島根県全域",
-      "applicationUrl": "https://www.pref.shimane.lg.jp/",
-      "requirements": "主な申請条件（100文字以内）",
-      "status": "受付中"
-    }
-  ]
-}
+{"subsidies":[{"id":"shimane-001","title":"補助金の正式名称","simpleDescription":"わかりやすい説明60文字以内","description":"詳細説明200文字以内","category":"農業・林業・水産業","targetUsers":["農業従事者"],"maxAmount":1000000,"deadline":"2026-06-30","issuer":"島根県","region":"島根県全域","applicationUrl":"https://www.pref.shimane.lg.jp/","requirements":"申請条件100文字以内","status":"受付中"}]}
 
-フィールド説明：
-- id: "shimane-" + 連番3桁（例: shimane-001）
-- category: "農業・林業・水産業" / "中小企業・創業支援" / "移住・定住支援" / "子育て・教育" / "住宅・リフォーム" / "ITデジタル化" / "その他" のいずれか
-- targetUsers: 対象者の配列（例: ["中小企業", "個人事業主"]）
-- maxAmount: 補助上限額（円・数値）。不明または上限なしの場合は 0
-- deadline: ISO日付形式 "YYYY-MM-DD"。不明・常時受付の場合は null
-- issuer: "島根県" / "松江市" / "出雲市" / "国" など発行元
-- region: "島根県全域" または具体的な市町村名
-- applicationUrl: 公式ページURL（不明の場合は発行元の公式サイト）
-- status: "受付中" / "受付予定" / "終了" のいずれか
-
-注意：
-- maxAmountは必ず数値（文字列不可）
-- 実在する・実在する可能性が高い制度のみを記載
-- 終了済みの制度は除外するか status: "終了" を設定
-`;
+フィールド: id=shimane-連番3桁, category="農業・林業・水産業"/"中小企業・創業支援"/"移住・定住支援"/"子育て・教育"/"住宅・リフォーム"/"ITデジタル化"/"その他", maxAmount=数値(不明は0), deadline=YYYY-MM-DD or null, status="受付中"/"受付予定"/"終了"`;
 }
 
 async function callGemini(modelId, prompt, apiKey) {
@@ -90,7 +59,7 @@ async function callGemini(modelId, prompt, apiKey) {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 4096,
       responseMimeType: 'application/json',
     },
   };
@@ -109,7 +78,7 @@ async function callGemini(modelId, prompt, apiKey) {
     return { res, data };
   } catch (err) {
     if (err.name === 'AbortError') {
-      const e = new Error('timeout');
+      const e = new Error(`タイムアウト (${modelId})`);
       e.isTimeout = true;
       throw e;
     }
@@ -127,14 +96,14 @@ async function fetchFromGemini(apiKey) {
     try {
       ({ res, data } = await callGemini(model.id, prompt, apiKey));
     } catch (err) {
-      console.warn(`[update-subsidies] ${model.id} エラー:`, err.message);
+      console.warn(`[update-subsidies] ${model.id} 失敗:`, err.message);
       continue;
     }
 
     if (!res.ok) {
       console.warn(`[update-subsidies] ${model.id} HTTP ${res.status}`);
-      if (res.status === 404) continue; // モデル未発見 → 次へ
-      throw new Error(`Gemini API エラー: HTTP ${res.status}`);
+      if (res.status === 404) continue;
+      throw new Error(`Gemini APIエラー: HTTP ${res.status} (${data?.error?.message || ''})`);
     }
 
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -142,14 +111,14 @@ async function fetchFromGemini(apiKey) {
     try {
       parsed = JSON.parse(text);
     } catch {
-      throw new Error('Gemini のレスポンスが不正なJSONです');
+      throw new Error('Geminiのレスポンスが不正なJSONです');
     }
 
     if (!Array.isArray(parsed?.subsidies)) {
-      throw new Error('Gemini レスポンスに subsidies 配列がありません');
+      throw new Error('Geminiレスポンスにsubsidies配列がありません');
     }
 
-    console.log(`[update-subsidies] Gemini 成功: ${model.id}, ${parsed.subsidies.length}件`);
+    console.log(`[update-subsidies] Gemini成功: ${model.id}, ${parsed.subsidies.length}件`);
     return parsed;
   }
 
@@ -158,27 +127,18 @@ async function fetchFromGemini(apiKey) {
 
 // ==================== Google JWT / OAuth ====================
 
-/**
- * Base64URL エンコード（Node.js Buffer）
- */
 function base64url(data) {
   const b = Buffer.isBuffer(data) ? data : Buffer.from(JSON.stringify(data));
   return b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/**
- * サービスアカウントの秘密鍵（PEM）を CryptoKey にインポートする
- * Node.js 18+ の crypto.subtle（WebCrypto）を使用
- */
 async function importPrivateKey(pemKey) {
-  // PEM ヘッダー・フッターと改行を除去して DER バイナリに変換
   const pemBody = pemKey
     .replace(/-----BEGIN PRIVATE KEY-----/, '')
     .replace(/-----END PRIVATE KEY-----/, '')
     .replace(/\s+/g, '');
   const der = Buffer.from(pemBody, 'base64');
 
-  const { webcrypto } = await import('node:crypto');
   return webcrypto.subtle.importKey(
     'pkcs8',
     der,
@@ -188,14 +148,11 @@ async function importPrivateKey(pemKey) {
   );
 }
 
-/**
- * RS256 JWT を署名して Google OAuth2 アクセストークンを取得
- */
 async function getGoogleAccessToken(serviceAccount) {
   const { client_email, private_key, token_uri } = serviceAccount;
   const tokenUrl = token_uri || 'https://oauth2.googleapis.com/token';
 
-  const now    = Math.floor(Date.now() / 1000);
+  const now     = Math.floor(Date.now() / 1000);
   const header  = { alg: 'RS256', typ: 'JWT' };
   const payload = {
     iss: client_email,
@@ -206,15 +163,12 @@ async function getGoogleAccessToken(serviceAccount) {
   };
 
   const signingInput = `${base64url(header)}.${base64url(payload)}`;
-
-  const cryptoKey = await importPrivateKey(private_key);
-  const { webcrypto } = await import('node:crypto');
-  const signature = await webcrypto.subtle.sign(
+  const cryptoKey    = await importPrivateKey(private_key);
+  const signature    = await webcrypto.subtle.sign(
     'RSASSA-PKCS1-v1_5',
     cryptoKey,
     Buffer.from(signingInput)
   );
-
   const jwt = `${signingInput}.${base64url(Buffer.from(signature))}`;
 
   const tokenRes = await fetch(tokenUrl, {
@@ -228,7 +182,7 @@ async function getGoogleAccessToken(serviceAccount) {
 
   if (!tokenRes.ok) {
     const err = await tokenRes.text().catch(() => '');
-    throw new Error(`Google OAuth トークン取得失敗: ${tokenRes.status} ${err}`);
+    throw new Error(`Google OAuthトークン取得失敗: ${tokenRes.status} ${err}`);
   }
 
   const tokenData = await tokenRes.json();
@@ -241,42 +195,33 @@ function firestoreUrl(projectId) {
   return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/hojosearch/shimane`;
 }
 
-/**
- * Firestore からデータを読み取る（認証不要・公開ルール前提）
- */
 async function readFirestore(projectId) {
   const res = await fetch(firestoreUrl(projectId), {
     headers: { 'Content-Type': 'application/json' },
   });
   if (res.status === 404) return null;
   if (!res.ok) {
-    console.warn('[update-subsidies] Firestore 読み取りエラー:', res.status);
+    console.warn('[update-subsidies] Firestore読み取りエラー:', res.status);
     return null;
   }
 
-  const doc = await res.json();
+  const doc         = await res.json();
   const dataStr     = doc?.fields?.data?.stringValue;
   const lastUpdated = doc?.fields?.lastUpdated?.timestampValue;
   if (!dataStr) return null;
 
   try {
-    const parsed = JSON.parse(dataStr);
-    return { ...parsed, lastUpdated };
+    return { ...JSON.parse(dataStr), lastUpdated };
   } catch {
     return null;
   }
 }
 
-/**
- * Firestore にデータを書き込む（サービスアカウント認証必須）
- */
 async function writeFirestore(projectId, accessToken, subsidies, fetchedAt) {
-  const payload = { subsidies, fetchedAt };
-  const now     = new Date().toISOString();
-
+  const now  = new Date().toISOString();
   const body = {
     fields: {
-      data:        { stringValue: JSON.stringify(payload) },
+      data:        { stringValue: JSON.stringify({ subsidies, fetchedAt }) },
       lastUpdated: { timestampValue: now },
       count:       { integerValue: String(subsidies.length) },
     },
@@ -294,16 +239,15 @@ async function writeFirestore(projectId, accessToken, subsidies, fetchedAt) {
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    throw new Error(`Firestore 書き込みエラー: ${res.status} ${errText}`);
+    throw new Error(`Firestore書き込みエラー: ${res.status} ${errText}`);
   }
 
-  console.log(`[update-subsidies] Firestore 書き込み完了: ${subsidies.length}件`);
+  console.log(`[update-subsidies] Firestore書き込み完了: ${subsidies.length}件`);
 }
 
 // ==================== メインハンドラー ====================
 
 exports.handler = async (event) => {
-  // ==================== CORS ====================
   const allowedOrigins = [
     process.env.URL,
     process.env.DEPLOY_URL,
@@ -326,9 +270,9 @@ exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers, body: '' };
 
   // ==================== 環境変数チェック ====================
-  const geminiKey    = process.env.GEMINI_API_KEY;
-  const projectId    = process.env.FIREBASE_PROJECT_ID;
-  const saRaw        = process.env.FIREBASE_SERVICE_ACCOUNT;
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const saRaw     = process.env.FIREBASE_SERVICE_ACCOUNT;
 
   if (!geminiKey || !projectId || !saRaw) {
     const missing = [
@@ -356,21 +300,19 @@ exports.handler = async (event) => {
   }
 
   // ==================== Firestore 読み取り（新鮮なら即返却）====================
-  let current;
+  let current = null;
   try {
     current = await readFirestore(projectId);
   } catch (err) {
-    console.warn('[update-subsidies] Firestore 読み取り失敗（スキップ）:', err.message);
-    current = null;
+    console.warn('[update-subsidies] Firestore読み取り失敗（スキップ）:', err.message);
   }
 
   if (current) {
-    const lastUpdated = current.lastUpdated;
-    const updatedAt   = lastUpdated ? new Date(lastUpdated).getTime() : 0;
-    const isStale     = !updatedAt || isNaN(updatedAt) || (Date.now() - updatedAt > STALE_THRESHOLD_MS);
+    const updatedAt = current.lastUpdated ? new Date(current.lastUpdated).getTime() : 0;
+    const isStale   = !updatedAt || isNaN(updatedAt) || (Date.now() - updatedAt > STALE_THRESHOLD_MS);
 
     if (!isStale) {
-      console.log('[update-subsidies] Firestore キャッシュヒット（7日以内）');
+      console.log('[update-subsidies] Firestoreキャッシュヒット（7日以内）');
       return {
         statusCode: 200,
         headers: { ...headers, 'X-Cache': 'HIT' },
@@ -382,19 +324,23 @@ exports.handler = async (event) => {
         }),
       };
     }
-    console.log('[update-subsidies] Firestore データが古い → Gemini 再取得');
+    console.log('[update-subsidies] Firestoreデータが古い → Gemini再取得');
   } else {
-    console.log('[update-subsidies] Firestore データなし → 新規取得');
+    console.log('[update-subsidies] Firestoreデータなし → 新規取得');
   }
 
-  // ==================== Gemini でデータ取得 ====================
-  let geminiResult;
+  // ==================== Gemini と OAuth を並列実行（時間短縮の核心）====================
+  let geminiResult, accessToken;
   try {
-    geminiResult = await fetchFromGemini(geminiKey);
+    [geminiResult, accessToken] = await Promise.all([
+      fetchFromGemini(geminiKey),
+      getGoogleAccessToken(serviceAccount),
+    ]);
   } catch (err) {
-    console.error('[update-subsidies] Gemini 取得失敗:', err.message);
+    console.error('[update-subsidies] 並列取得失敗:', err.message);
 
-    // Gemini 失敗時: 古いFirestoreデータがあれば返す（graceful degradation）
+    // Geminiは失敗したがOAuthは成功している場合もある。
+    // いずれにせよ古いFirestoreデータがあれば返す（graceful degradation）
     if (current?.subsidies) {
       return {
         statusCode: 200,
@@ -420,11 +366,10 @@ exports.handler = async (event) => {
 
   // ==================== Firestore 書き込み ====================
   try {
-    const accessToken = await getGoogleAccessToken(serviceAccount);
     await writeFirestore(projectId, accessToken, geminiResult.subsidies, fetchedAt);
   } catch (err) {
-    console.error('[update-subsidies] Firestore 書き込み失敗:', err.message);
-    // 書き込み失敗でも取得したデータは返す（クライアントにはlocalStorageキャッシュで対応）
+    console.error('[update-subsidies] Firestore書き込み失敗:', err.message);
+    // 書き込み失敗でも取得したデータはクライアントに返す
   }
 
   return {

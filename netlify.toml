@@ -24,3 +24,9 @@
   for = "/.netlify/functions/*"
   [headers.values]
     Cache-Control = "no-store"
+
+# update-subsidies: Gemini生成 + Firestore書込のため長めのタイムアウト
+# 無料プラン: 10秒固定（この設定は無視される）
+# 有料プラン: 最大26秒まで設定可能
+[functions.update-subsidies]
+  timeout = 26
