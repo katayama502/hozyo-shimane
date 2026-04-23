@@ -9,6 +9,7 @@
  * ★ FIREBASE_PROJECT_ID を自分のプロジェクトIDに変更してください ★
  */
 
+
 const FIREBASE_PROJECT_ID = 'shimane-hojosearch'; // ← 変更必要
 
 const FIREBASE = {
