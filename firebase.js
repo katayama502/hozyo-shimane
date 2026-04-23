@@ -13,7 +13,7 @@ const FIREBASE_PROJECT_ID = 'YOUR_FIREBASE_PROJECT_ID'; // ← 変更必要
 
 const FIREBASE = {
   STALE_THRESHOLD_MS: 7 * 24 * 60 * 60 * 1000, // 7日（週次更新）
-  DOC_URL: `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/hojosearch/shimane`,
+  DOC_URL: `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/hojosearch/masuda`,
 
   /**
    * Firestore から補助金データを取得する

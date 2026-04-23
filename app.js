@@ -330,11 +330,11 @@ const APP = {
     const container = document.getElementById('example-chips');
     if (!container) return;
     const examples = [
-      '島根に移住して農業を始めたい',
-      '中小企業のIT化を進めたい',
+      '益田市に移住して農業を始めたい',
+      '益田市で中小企業のIT化を進めたい',
       '子育て中で家のリフォームをしたい',
-      '飲食店を新規開業したい',
-      '林業に就きたい',
+      '益田市で飲食店を新規開業したい',
+      '益田市で林業に就きたい',
     ];
     examples.forEach(text => {
       const btn = document.createElement('button');

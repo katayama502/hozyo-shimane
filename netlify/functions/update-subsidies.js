@@ -38,19 +38,17 @@ const GEMINI_MODELS = [
 // ==================== Gemini呼び出し ====================
 
 function buildSubsidyPrompt() {
-  return `あなたは島根県の補助金・助成金制度に精通した専門家です。
-2026年現在、島根県内で申請可能または近日中に申請受付が予定されている補助金・助成金・支援制度を25件リストアップしてください。
+  return `あなたは島根県益田市の補助金・助成金制度に精通した専門家です。
+2026年現在、島根県益田市の市民・事業者が申請可能または近日中に申請受付が予定されている補助金・助成金・支援制度を25件リストアップしてください。
 
-以下のカテゴリから各3〜5件を目安に選んでください：農業・林業・水産業、中小企業・創業支援、移住・定住支援、子育て・教育、住宅・リフォーム、ITデジタル化
-
-国の補助金で島根県民も対象になるものも含めてください（例：ものづくり補助金、IT導入補助金等）。
-松江市・出雲市・浜田市など市町村独自の補助金も含めてください。
+優先順位：1)益田市独自の制度 2)島根県の制度（益田市民対象） 3)国の制度（益田市民も対象：ものづくり補助金・IT導入補助金等）
+カテゴリから各3〜5件：農業・林業・水産業、中小企業・創業支援、移住・定住支援、子育て・教育、住宅・リフォーム、ITデジタル化
 
 以下のJSON形式のみで返してください（説明文・マークダウン等は一切不要）：
 
-{"subsidies":[{"id":"shimane-001","title":"補助金の正式名称","simpleDescription":"わかりやすい説明60文字以内","description":"詳細説明200文字以内","category":"農業・林業・水産業","targetUsers":["農業従事者"],"maxAmount":1000000,"deadline":"2026-06-30","issuer":"島根県","region":"島根県全域","applicationUrl":"https://www.pref.shimane.lg.jp/","requirements":"申請条件100文字以内","status":"受付中"}]}
+{"subsidies":[{"id":"masuda-001","title":"補助金の正式名称","simpleDescription":"わかりやすい説明60文字以内","description":"詳細説明200文字以内","category":"農業・林業・水産業","targetUsers":["農業従事者"],"maxAmount":1000000,"deadline":"2026-06-30","issuer":"益田市","region":"益田市","applicationUrl":"https://www.city.masuda.lg.jp/","requirements":"申請条件100文字以内","status":"受付中"}]}
 
-フィールド: id=shimane-連番3桁, category="農業・林業・水産業"/"中小企業・創業支援"/"移住・定住支援"/"子育て・教育"/"住宅・リフォーム"/"ITデジタル化"/"その他", maxAmount=数値(不明は0), deadline=YYYY-MM-DD or null, status="受付中"/"受付予定"/"終了"`;
+フィールド: id=masuda-連番3桁, category="農業・林業・水産業"/"中小企業・創業支援"/"移住・定住支援"/"子育て・教育"/"住宅・リフォーム"/"ITデジタル化"/"その他", issuer="益田市"/"島根県"/"国", maxAmount=数値(不明は0), deadline=YYYY-MM-DD or null, status="受付中"/"受付予定"/"終了"`;
 }
 
 async function callGemini(modelId, prompt, apiKey) {
@@ -192,7 +190,7 @@ async function getGoogleAccessToken(serviceAccount) {
 // ==================== Firestore 読み書き ====================
 
 function firestoreUrl(projectId) {
-  return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/hojosearch/shimane`;
+  return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/hojosearch/masuda`;
 }
 
 async function readFirestore(projectId) {
