@@ -1,0 +1,25 @@
+# 環境変数・機密情報（絶対にコミットしないこと）
+.env
+.env.local
+.env.*.local
+*.env
+
+# OS / エディタ
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node（将来的にビルドツールを追加する場合）
+node_modules/
+dist/
+.cache/
+
+# ローカルテスト用
+*.local.js
+test-keys.txt
+
+# NOTE: Gemini APIキーは localStorage にのみ保存し、
+# コードベースに含めないでください。
