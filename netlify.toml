@@ -25,8 +25,10 @@
   [headers.values]
     Cache-Control = "no-store"
 
-# update-subsidies: Gemini生成 + Firestore書込のため長めのタイムアウト
-# 無料プラン: 10秒固定（この設定は無視される）
-# 有料プラン: 最大26秒まで設定可能
+# update-subsidies: 初回セットアップのみGemini呼び出し（通常はFirestoreから即返却）
 [functions.update-subsidies]
   timeout = 26
+
+# scheduled-update: 毎週月曜 6:00 JST（= 日曜 21:00 UTC）に自動実行
+[functions.scheduled-update]
+  schedule = "0 21 * * 0"
