@@ -1,0 +1,1 @@
+# hozyo-shimane
