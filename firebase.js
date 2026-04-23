@@ -9,7 +9,7 @@
  * ★ FIREBASE_PROJECT_ID を自分のプロジェクトIDに変更してください ★
  */
 
-const FIREBASE_PROJECT_ID = 'YOUR_FIREBASE_PROJECT_ID'; // ← 変更必要
+const FIREBASE_PROJECT_ID = 'shimane-hojosearch'; // ← 変更必要
 
 const FIREBASE = {
   STALE_THRESHOLD_MS: 7 * 24 * 60 * 60 * 1000, // 7日（週次更新）
