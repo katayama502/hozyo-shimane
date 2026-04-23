@@ -156,28 +156,31 @@ const APP = {
   },
 
   /**
-   * サーバーからデータを取得する（Firebase優先 → Netlify Function）
+   * サーバーからデータを取得する
    *
-   * Firebase読み取りは公開エンドポイントで即時。
-   * データが新鮮ならGemini呼び出しなし（トークン消費ゼロ）。
-   * データが古い or 未作成の場合のみ update-subsidies Function 経由でGemini呼び出し。
+   * 優先順位:
+   *   1. Firestore 直接読み取り（認証不要・瞬時）← 通常はここで完結
+   *   2. update-subsidies Function  ← 初回のみ（Firestoreが空の場合）
+   *
+   * データの鮮度管理は週次cron（scheduled-update）が担うため、
+   * クライアントは staleness チェックを行わない。
    */
   async _fetchFromServer() {
     // ---- Firebase Firestore から直接読み取り（認証不要）----
     if (typeof FIREBASE !== 'undefined') {
       try {
         const firestoreData = await FIREBASE.getSubsidies();
-        if (firestoreData?.subsidies?.length > 0 && !FIREBASE.isStale(firestoreData.lastUpdated)) {
-          console.log('[APP] Firestore から新鮮なデータを取得（Gemini呼び出しなし）');
+        if (firestoreData?.subsidies?.length > 0) {
+          console.log('[APP] Firestoreからデータ取得');
           return { ...firestoreData, source: 'firestore' };
         }
-        console.log('[APP] Firestore データなし or 古い → update-subsidies を呼び出し');
       } catch (err) {
-        console.warn('[APP] Firestore 読み取り失敗:', err.message);
+        console.warn('[APP] Firestore読み取り失敗:', err.message);
       }
     }
 
-    // ---- Netlify Function: update-subsidies（Gemini再取得 + Firestore更新）----
+    // ---- Netlify Function: update-subsidies（初回セットアップのみ到達）----
+    console.log('[APP] Firestore空 → update-subsidies（初回セットアップ）');
     const res = await fetch('/.netlify/functions/update-subsidies', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
