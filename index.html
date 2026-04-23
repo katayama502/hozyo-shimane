@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="HojoSearch 島根版 - 島根県の補助金・助成金をAIで検索。農業・中小企業・移住・子育てなど、あなたに合った補助金をすぐに見つけられます。">
+  <meta name="description" content="HojoSearch 益田版 - 島根県益田市の補助金・助成金をAIで検索。農業・中小企業・移住・子育てなど、あなたに合った補助金をすぐに見つけられます。">
   <meta name="theme-color" content="#1a56db">
-  <title>HojoSearch 島根版 - 島根県の補助金・助成金を探す</title>
+  <title>HojoSearch 益田版 - 益田市の補助金・助成金を探す</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -17,12 +17,6 @@
     補助金の申請前に必ず<strong>公式サイト・担当窓口</strong>でご確認ください。
   </div>
 
-  <!-- ==================== APIキーバナー ==================== -->
-  <div id="apikey-banner" class="apikey-banner hidden" role="alert">
-    <p>🔑 Gemini APIキーを設定すると補助金情報を取得できます</p>
-    <button id="apikey-banner-btn" class="btn btn-primary btn-sm">APIキーを設定する</button>
-  </div>
-
   <!-- ==================== ヘッダー ==================== -->
   <header class="site-header" role="banner">
     <div class="header-inner">
@@ -30,13 +24,8 @@
         <div class="logo-icon" aria-hidden="true">🏛</div>
         <div class="logo-text">
           <span class="logo-title">HojoSearch</span>
-          <span class="logo-sub">島根県の補助金・助成金検索</span>
+          <span class="logo-sub">益田市の補助金・助成金検索</span>
         </div>
-      </div>
-      <div class="header-actions">
-        <button id="settings-btn" class="btn btn-ghost btn-sm" aria-label="APIキー設定">
-          ⚙ APIキー設定
-        </button>
       </div>
     </div>
   </header>
@@ -180,7 +169,7 @@
           <textarea
             id="ai-intent-input"
             class="ai-textarea"
-            placeholder="例：松江市で農業を始めたい。農機具の購入費用を補助してもらえる制度はありますか？"
+            placeholder="例：益田市で農業を始めたい。農機具の購入費用を補助してもらえる制度はありますか？"
             aria-label="やりたいこと・困っていること"
             rows="4"
           ></textarea>
@@ -211,17 +200,16 @@
   <!-- ==================== フッター ==================== -->
   <footer class="site-footer" role="contentinfo">
     <p>
-      <strong style="color: white;">HojoSearch 島根版</strong> &nbsp;|&nbsp;
+      <strong style="color: white;">HojoSearch 益田版</strong> &nbsp;|&nbsp;
       Powered by <a href="https://ai.google.dev/" target="_blank" rel="noopener noreferrer">Google Gemini API</a> &nbsp;|&nbsp;
-      <a href="https://www.pref.shimane.lg.jp/" target="_blank" rel="noopener noreferrer">島根県公式サイト</a>
+      <a href="https://www.city.masuda.lg.jp/" target="_blank" rel="noopener noreferrer">益田市公式サイト</a>
     </p>
     <p style="margin-top: 8px;">
       ※ 本サービスはAIによる情報提供であり、補助金の受給を保証するものではありません。<br>
       申請の際は必ず公式サイト・担当窓口にてご確認ください。
     </p>
     <p style="margin-top: 8px; font-size: 11px;">
-      © 2026 HojoSearch 島根版 MVP v2.0 &nbsp; | &nbsp;
-      APIキーはお客様のブラウザのみに保存され、第三者に送信されることはありません。
+      © 2026 HojoSearch 益田版 MVP v2.0
     </p>
   </footer>
 
@@ -306,60 +294,8 @@
     </div>
   </div>
 
-  <!-- ==================== APIキーモーダル ==================== -->
-  <div
-    id="apikey-modal"
-    class="modal-overlay hidden"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="apikey-modal-title"
-    aria-hidden="true"
-  >
-    <div class="modal-box apikey-modal-box">
-      <div class="modal-header">
-        <h2 id="apikey-modal-title" class="modal-title">🔑 Gemini APIキーの設定</h2>
-        <button id="close-apikey-modal" class="modal-close" aria-label="閉じる">✕</button>
-      </div>
-      <div class="modal-body">
-
-        <div class="apikey-form-group">
-          <label for="apikey-input">Gemini APIキー</label>
-          <div class="apikey-input-wrapper">
-            <input
-              type="password"
-              id="apikey-input"
-              class="apikey-input"
-              placeholder="AIzaSy..."
-              autocomplete="off"
-              spellcheck="false"
-            >
-            <button id="toggle-apikey-visibility" class="btn btn-secondary btn-sm">表示</button>
-          </div>
-        </div>
-
-        <div class="apikey-note">
-          <strong>📌 APIキーの取得方法</strong><br>
-          1. <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a> にアクセス<br>
-          2. 「Get API key」→「Create API key」をクリック<br>
-          3. 生成されたキー（AIzaSy...）をコピーして上に貼り付け
-        </div>
-
-        <p class="apikey-guide">
-          🔒 APIキーはこのブラウザの localStorage にのみ保存されます。
-          外部サーバーに送信されることはありません（Gemini APIに直接送信されます）。
-        </p>
-
-      </div>
-      <div class="modal-footer">
-        <button id="save-apikey-btn" class="btn btn-primary">保存して補助金を取得する</button>
-        <button id="close-apikey-modal-2" class="btn btn-secondary">
-          キャンセル
-        </button>
-      </div>
-    </div>
-  </div>
-
   <!-- ==================== スクリプト ==================== -->
+  <script src="firebase.js" defer></script>
   <script src="prompts.js" defer></script>
   <script src="gemini.js" defer></script>
   <script src="filter.js" defer></script>

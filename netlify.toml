@@ -1,0 +1,32 @@
+# netlify.toml
+# HojoSearch 島根版 - Netlify設定
+
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+# Netlify Dev（ローカル開発）設定
+[dev]
+  port = 8888
+  autoLaunch = false
+
+# セキュリティヘッダー
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+
+# Functions のキャッシュ無効化
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    Cache-Control = "no-store"
+
+# update-subsidies: Gemini生成 + Firestore書込のため長めのタイムアウト
+# 無料プラン: 10秒固定（この設定は無視される）
+# 有料プラン: 最大26秒まで設定可能
+[functions.update-subsidies]
+  timeout = 26
