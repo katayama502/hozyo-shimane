@@ -2,19 +2,52 @@
  * netlify/functions/gemini-proxy.js
  *
  * Gemini APIへのセキュアなプロキシ関数。
- * APIキーはNetlify環境変数 GEMINI_API_KEY に保存し、
- * クライアント側に一切露出しない。
+ * - APIキーはNetlify環境変数 GEMINI_API_KEY に保護
+ * - モデル自動フォールバック（3.1 Flash-Lite → 2.0 Flash → 1.5 Flash）
+ * - 429レート制限時はクライアントに retryAfter を通知
  */
 
-const GEMINI_MODEL = 'gemini-2.0-flash';
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+// 無料枠レート制限（2026年4月時点）
+// モデルを制限の緩いものから順に並べる
+// RPM: 分間リクエスト数 / RPD: 日間リクエスト数
+const MODELS = [
+  { id: 'gemini-3.1-flash-lite', rpm: 30, rpd: 2000 },  // 最も制限が緩い
+  { id: 'gemini-2.0-flash',      rpm: 15, rpd: 1500 },  // 実績あり
+  { id: 'gemini-1.5-flash',      rpm: 15, rpd: 1500 },  // 最終フォールバック
+];
+
+/**
+ * 単一モデルでGemini APIを呼び出す
+ */
+async function callGemini(modelId, prompt, apiKey) {
+  const url = `${GEMINI_BASE_URL}/${modelId}:generateContent?key=${apiKey}`;
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 6000,          // 安全マージンを取り控えめに設定
+      responseMimeType: 'application/json',
+    },
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  return { res, data };
+}
 
 exports.handler = async (event) => {
   // ==================== CORS ヘッダー ====================
   const allowedOrigins = [
-    process.env.URL,          // Netlifyが自動設定するデプロイURL
-    process.env.DEPLOY_URL,   // プレビューURL
-    'http://localhost:8888',  // Netlify Dev
+    process.env.URL,
+    process.env.DEPLOY_URL,
+    'http://localhost:8888',
     'http://localhost:3000',
     'http://localhost',
   ].filter(Boolean);
@@ -30,106 +63,97 @@ exports.handler = async (event) => {
     'Access-Control-Max-Age': '86400',
   };
 
-  // プリフライトリクエスト
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers, body: '' };
-  }
-
-  // POST以外は拒否
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers, body: '' };
   if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method Not Allowed' }),
-    };
+    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
   }
 
   // ==================== APIキー確認 ====================
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.error('[gemini-proxy] GEMINI_API_KEY が設定されていません');
+    console.error('[gemini-proxy] GEMINI_API_KEY が未設定');
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({
-        error: 'サーバーの設定が完了していません。管理者にお問い合わせください。',
-      }),
+      body: JSON.stringify({ error: 'サーバーの設定が完了していません。管理者にお問い合わせください。' }),
     };
   }
 
-  // ==================== リクエスト解析 ====================
+  // ==================== リクエスト検証 ====================
   let body;
   try {
     body = JSON.parse(event.body || '{}');
   } catch {
-    return {
-      statusCode: 400,
-      headers,
-      body: JSON.stringify({ error: 'リクエストの形式が不正です。' }),
-    };
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'リクエストの形式が不正です。' }) };
   }
 
   const { prompt } = body;
-  if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
-    return {
-      statusCode: 400,
-      headers,
-      body: JSON.stringify({ error: 'prompt が指定されていません。' }),
-    };
+  if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'prompt が指定されていません。' }) };
   }
-
-  // プロンプト長の制限（悪用防止）
   if (prompt.length > 8000) {
-    return {
-      statusCode: 400,
-      headers,
-      body: JSON.stringify({ error: 'プロンプトが長すぎます。' }),
-    };
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'プロンプトが長すぎます。' }) };
   }
 
-  // ==================== Gemini API呼び出し ====================
-  const geminiUrl = `${GEMINI_BASE_URL}/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  // ==================== モデルフォールバックで呼び出し ====================
+  let lastError = null;
 
-  const geminiBody = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 8192,
-      responseMimeType: 'application/json',
-    },
-  };
+  for (const model of MODELS) {
+    let res, data;
+    try {
+      ({ res, data } = await callGemini(model.id, prompt, apiKey));
+    } catch (networkErr) {
+      console.error(`[gemini-proxy] ネットワークエラー (${model.id}):`, networkErr.message);
+      lastError = { statusCode: 502, error: 'AIサービスへの接続に失敗しました。時間をおいて再試行してください。' };
+      continue;
+    }
 
-  let geminiRes;
-  try {
-    geminiRes = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geminiBody),
-    });
-  } catch (networkErr) {
-    console.error('[gemini-proxy] ネットワークエラー:', networkErr);
-    return {
-      statusCode: 502,
-      headers,
-      body: JSON.stringify({ error: 'Gemini APIへの接続に失敗しました。時間をおいて再試行してください。' }),
+    // 成功
+    if (res.ok) {
+      console.log(`[gemini-proxy] 成功: ${model.id}`);
+      return { statusCode: 200, headers, body: JSON.stringify(data) };
+    }
+
+    const status = res.status;
+    const errMsg = data?.error?.message || `HTTP ${status}`;
+    console.warn(`[gemini-proxy] ${model.id} → ${status}: ${errMsg}`);
+
+    // レート制限（429）: クライアントに retryAfter を返してフォールバックしない
+    if (status === 429) {
+      const retryAfterSec = parseInt(res.headers.get('retry-after') || '60', 10);
+      return {
+        statusCode: 429,
+        headers: { ...headers, 'Retry-After': String(retryAfterSec) },
+        body: JSON.stringify({
+          error: 'rate_limit',
+          retryAfter: retryAfterSec,
+          model: model.id,
+          rpm: model.rpm,
+          rpd: model.rpd,
+        }),
+      };
+    }
+
+    // モデルが存在しない（404）→ 次のモデルを試す
+    if (status === 404) {
+      console.warn(`[gemini-proxy] モデル未発見: ${model.id} → 次へフォールバック`);
+      lastError = { statusCode: 404, error: `モデル ${model.id} が利用できません。` };
+      continue;
+    }
+
+    // その他のエラー → リトライ不要
+    lastError = {
+      statusCode: status >= 500 ? 502 : status,
+      error: `AIサービスエラー: ${errMsg}`,
     };
+    break;
   }
 
-  const geminiData = await geminiRes.json();
-
-  if (!geminiRes.ok) {
-    const errMsg = geminiData?.error?.message || `HTTP ${geminiRes.status}`;
-    console.error('[gemini-proxy] Gemini APIエラー:', geminiRes.status, errMsg);
-    return {
-      statusCode: geminiRes.status >= 500 ? 502 : geminiRes.status,
-      headers,
-      body: JSON.stringify({ error: `AIサービスエラー: ${errMsg}` }),
-    };
-  }
-
+  // 全モデルで失敗
+  console.error('[gemini-proxy] 全モデルで失敗:', lastError);
   return {
-    statusCode: 200,
+    statusCode: lastError?.statusCode || 502,
     headers,
-    body: JSON.stringify(geminiData),
+    body: JSON.stringify({ error: lastError?.error || '予期しないエラーが発生しました。' }),
   };
 };
