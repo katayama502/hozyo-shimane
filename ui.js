@@ -579,6 +579,112 @@ const UI = {
     container.appendChild(errEl);
   },
 
+  // ==================== レート制限UI ====================
+
+  /**
+   * カード一覧エリアにレート制限エラーを表示（再試行ボタン付き）
+   */
+  showRateLimitError(message, retryAfterMs, onRetry) {
+    const grid = document.getElementById('cards-grid');
+    const empty = document.getElementById('empty-state');
+    const errorEl = document.getElementById('error-state');
+    const errorMsg = document.getElementById('error-message');
+
+    if (grid) grid.innerHTML = '';
+    if (empty) empty.classList.add('hidden');
+    if (errorEl) errorEl.classList.remove('hidden');
+    if (errorMsg) errorMsg.textContent = message;
+
+    const retryBtn = document.getElementById('retry-btn');
+    if (!retryBtn) return;
+
+    if (retryAfterMs && retryAfterMs > 0) {
+      retryBtn.disabled = true;
+      let remaining = Math.ceil(retryAfterMs / 1000);
+      retryBtn.textContent = `${remaining}秒後に再試行可能`;
+
+      const tick = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+          clearInterval(tick);
+          retryBtn.disabled = false;
+          retryBtn.textContent = '再試行する';
+          if (onRetry) retryBtn.onclick = onRetry;
+        } else {
+          retryBtn.textContent = `${remaining}秒後に再試行可能`;
+        }
+      }, 1000);
+    } else {
+      retryBtn.disabled = false;
+      retryBtn.textContent = '再試行する';
+      if (onRetry) retryBtn.onclick = onRetry;
+    }
+  },
+
+  /**
+   * 取得中にレート制限が発生してリトライ待機中であることをステータスバーに表示
+   */
+  showRateLimitCountdown(waitMs, attempt) {
+    const statusBar = document.getElementById('status-bar');
+    let banner = document.getElementById('rate-limit-banner');
+
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'rate-limit-banner';
+      banner.className = 'rate-limit-banner';
+      banner.setAttribute('role', 'status');
+      if (statusBar) statusBar.after(banner);
+    }
+
+    let remaining = Math.ceil(waitMs / 1000);
+    const updateText = () => {
+      const icon = document.createElement('span');
+      icon.textContent = '⏳ ';
+      const text = document.createElement('span');
+      text.textContent = `レート制限のため ${remaining}秒 待機中… (自動リトライ ${attempt}回目)`;
+      banner.innerHTML = '';
+      banner.appendChild(icon);
+      banner.appendChild(text);
+    };
+    updateText();
+    banner.classList.remove('hidden');
+
+    const tick = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) { clearInterval(tick); return; }
+      updateText();
+    }, 1000);
+    banner._tickId = tick;
+  },
+
+  hideRateLimitCountdown() {
+    const banner = document.getElementById('rate-limit-banner');
+    if (!banner) return;
+    if (banner._tickId) clearInterval(banner._tickId);
+    banner.classList.add('hidden');
+  },
+
+  /**
+   * AI検索中のレート制限メッセージ
+   */
+  showAIRateLimitMessage(waitMs, attempt) {
+    const loadingEl = document.getElementById('ai-loading');
+    if (!loadingEl) return;
+    let msgEl = loadingEl.querySelector('.ai-ratelimit-msg');
+    if (!msgEl) {
+      msgEl = document.createElement('p');
+      msgEl.className = 'ai-ratelimit-msg';
+      loadingEl.appendChild(msgEl);
+    }
+    let remaining = Math.ceil(waitMs / 1000);
+    msgEl.textContent = `レート制限のため ${remaining}秒 待機中… (リトライ ${attempt}回目)`;
+    const tick = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) { clearInterval(tick); msgEl.textContent = '再試行中…'; return; }
+      msgEl.textContent = `レート制限のため ${remaining}秒 待機中… (リトライ ${attempt}回目)`;
+    }, 1000);
+  },
+
   // ==================== ユーティリティ ====================
 
   _setText(id, text) {
