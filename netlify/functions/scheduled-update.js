@@ -12,7 +12,7 @@
  *   FIREBASE_SERVICE_ACCOUNT - サービスアカウントJSONの全文字列
  */
 
-const { fetchFromGemini, getGoogleAccessToken, writeFirestore } = require('./_shared');
+const { SCRAPE_URLS, scrapePages, fetchFromGemini, getGoogleAccessToken, writeFirestore } = require('./_shared');
 
 exports.handler = async () => {
   console.log('[scheduled-update] 週次更新開始:', new Date().toISOString());
@@ -39,16 +39,26 @@ exports.handler = async () => {
     return { statusCode: 500, body: 'FIREBASE_SERVICE_ACCOUNT のJSON形式が不正です' };
   }
 
-  // Gemini呼び出しとOAuthトークン取得を並列実行
-  let geminiResult, accessToken;
+  // 益田市公式サイトをスクレイピング + OAuth取得を並列実行
+  let scrapedContent, accessToken;
   try {
-    [geminiResult, accessToken] = await Promise.all([
-      fetchFromGemini(geminiKey),
+    [scrapedContent, accessToken] = await Promise.all([
+      scrapePages(SCRAPE_URLS),
       getGoogleAccessToken(serviceAccount),
     ]);
+    console.log(`[scheduled-update] スクレイピング完了 (${scrapedContent.length}文字)`);
   } catch (err) {
-    console.error('[scheduled-update] 並列取得失敗:', err.message);
-    return { statusCode: 502, body: `取得失敗: ${err.message}` };
+    console.warn('[scheduled-update] 前処理失敗（Geminiのみで続行）:', err.message);
+    scrapedContent = '';
+  }
+
+  // スクレイピング結果をもとにGeminiで構造化
+  let geminiResult;
+  try {
+    geminiResult = await fetchFromGemini(geminiKey, scrapedContent);
+  } catch (err) {
+    console.error('[scheduled-update] Gemini失敗:', err.message);
+    return { statusCode: 502, body: `Gemini失敗: ${err.message}` };
   }
 
   const fetchedAt = new Date().toISOString();
