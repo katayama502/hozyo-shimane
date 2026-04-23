@@ -13,9 +13,9 @@ const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models
 // モデルを制限の緩いものから順に並べる
 // RPM: 分間リクエスト数 / RPD: 日間リクエスト数
 const MODELS = [
-  { id: 'gemini-3.1-flash-lite', rpm: 30, rpd: 2000 },  // 最も制限が緩い
-  { id: 'gemini-2.0-flash',      rpm: 15, rpd: 1500 },  // 実績あり
-  { id: 'gemini-1.5-flash',      rpm: 15, rpd: 1500 },  // 最終フォールバック
+  { id: 'gemini-2.5-flash',      rpm: 10, rpd: 500  },  // メイン（高性能）
+  { id: 'gemini-2.0-flash',      rpm: 15, rpd: 1500 },  // フォールバック1
+  { id: 'gemini-1.5-flash',      rpm: 15, rpd: 1500 },  // フォールバック2
 ];
 
 /**
