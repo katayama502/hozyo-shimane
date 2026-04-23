@@ -2,10 +2,11 @@
  * app.js
  * メインロジック（状態管理・初期化・イベント連携）
  *
- * キャッシュ戦略（無料枠のRPD節約）:
- *   L1: メモリ（APP_STATE）  → タブ間共有なし、即時
- *   L2: sessionStorage（30分）→ タブ内ページリロード対応
- *   L3: localStorage（6時間） → タブ・セッションをまたいで保持
+ * データ取得の優先順位:
+ *   1. sessionStorage（30分）→ タブ内リロード対応・即時
+ *   2. localStorage（6時間） → セッションをまたいで保持
+ *   3. Firebase Firestore    → 週1回更新のサーバーキャッシュ（全ユーザー共有）
+ *   4. Netlify Function      → Firestoreが古い場合のみGemini再取得 + Firestore更新
  */
 
 // ==================== グローバル状態 ====================
@@ -109,7 +110,7 @@ const APP = {
       }
     }
 
-    // ---- API呼び出し ----
+    // ---- Firebase / Netlify Function 呼び出し ----
     APP_STATE.isLoading = true;
     APP.lastFetchTimestamp = Date.now();
     UI.showSkeleton(9);
@@ -117,11 +118,7 @@ const APP = {
     APP._setFetchBtnState(true);
 
     try {
-      const result = await GEMINI_API.fetchSubsidies({
-        onRateLimit: (waitMs, attempt) => {
-          UI.showRateLimitCountdown(waitMs, attempt);
-        },
-      });
+      const result = await APP._fetchFromServer();
 
       APP._writeCache(sessionStorage, APP.CACHE_KEY_SESSION, result);
       APP._writeCache(localStorage,   APP.CACHE_KEY_LOCAL,   result);
@@ -132,7 +129,13 @@ const APP = {
       UI.updateFilterOptions(result.subsidies);
       UI.hideRateLimitCountdown();
       APP.applyFilters();
-      UI.showToast(`${result.subsidies.length}件の補助金情報を取得しました`, 'success');
+
+      const sourceLabel = result.source === 'firestore'
+        ? 'Firestoreキャッシュ'
+        : result.source === 'firestore-stale'
+        ? 'Firestoreキャッシュ（古い可能性あり）'
+        : 'Gemini AI（最新）';
+      UI.showToast(`${result.subsidies.length}件の補助金情報を取得しました（${sourceLabel}）`, 'success');
 
     } catch (err) {
       console.error('[APP] loadSubsidies error:', err);
@@ -150,6 +153,46 @@ const APP = {
       APP_STATE.isLoading = false;
       APP._setFetchBtnState(false);
     }
+  },
+
+  /**
+   * サーバーからデータを取得する（Firebase優先 → Netlify Function）
+   *
+   * Firebase読み取りは公開エンドポイントで即時。
+   * データが新鮮ならGemini呼び出しなし（トークン消費ゼロ）。
+   * データが古い or 未作成の場合のみ update-subsidies Function 経由でGemini呼び出し。
+   */
+  async _fetchFromServer() {
+    // ---- Firebase Firestore から直接読み取り（認証不要）----
+    if (typeof FIREBASE !== 'undefined') {
+      try {
+        const firestoreData = await FIREBASE.getSubsidies();
+        if (firestoreData?.subsidies?.length > 0 && !FIREBASE.isStale(firestoreData.lastUpdated)) {
+          console.log('[APP] Firestore から新鮮なデータを取得（Gemini呼び出しなし）');
+          return { ...firestoreData, source: 'firestore' };
+        }
+        console.log('[APP] Firestore データなし or 古い → update-subsidies を呼び出し');
+      } catch (err) {
+        console.warn('[APP] Firestore 読み取り失敗:', err.message);
+      }
+    }
+
+    // ---- Netlify Function: update-subsidies（Gemini再取得 + Firestore更新）----
+    const res = await fetch('/.netlify/functions/update-subsidies', {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new GeminiError(
+        data.error || `サーバーエラーが発生しました（HTTP ${res.status}）`,
+        res.status === 429 ? 'RATE_LIMIT' : 'API_ERROR',
+        (data.retryAfter || 60) * 1000
+      );
+    }
+
+    return await res.json();
   },
 
   /** キャッシュデータを画面に適用 */

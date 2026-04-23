@@ -18,8 +18,11 @@ const MODELS = [
   { id: 'gemini-1.5-flash',      rpm: 15, rpd: 1500 },  // フォールバック2
 ];
 
+// Netlify無料枠タイムアウト10秒に対し、8秒でGemini側をAbort
+const GEMINI_TIMEOUT_MS = 8000;
+
 /**
- * 単一モデルでGemini APIを呼び出す
+ * 単一モデルでGemini APIを呼び出す（AbortControllerでタイムアウト制御）
  */
 async function callGemini(modelId, prompt, apiKey) {
   const url = `${GEMINI_BASE_URL}/${modelId}:generateContent?key=${apiKey}`;
@@ -27,19 +30,34 @@ async function callGemini(modelId, prompt, apiKey) {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 6000,          // 安全マージンを取り控えめに設定
+      maxOutputTokens: 3000,   // 504対策: 出力を抑えてレスポンスを高速化
       responseMimeType: 'application/json',
     },
   };
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
 
-  const data = await res.json().catch(() => ({}));
-  return { res, data };
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    return { res, data };
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      // タイムアウト専用エラーを投げる
+      const timeoutErr = new Error('timeout');
+      timeoutErr.isTimeout = true;
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 exports.handler = async (event) => {
@@ -102,8 +120,13 @@ exports.handler = async (event) => {
     let res, data;
     try {
       ({ res, data } = await callGemini(model.id, prompt, apiKey));
-    } catch (networkErr) {
-      console.error(`[gemini-proxy] ネットワークエラー (${model.id}):`, networkErr.message);
+    } catch (err) {
+      if (err.isTimeout) {
+        console.warn(`[gemini-proxy] タイムアウト (${model.id}) → 次へフォールバック`);
+        lastError = { statusCode: 504, error: '応答時間が上限を超えました。再試行してください。' };
+        continue; // 次のモデルで再試行
+      }
+      console.error(`[gemini-proxy] ネットワークエラー (${model.id}):`, err.message);
       lastError = { statusCode: 502, error: 'AIサービスへの接続に失敗しました。時間をおいて再試行してください。' };
       continue;
     }
