@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="HojoSearch 島根版 - 島根県の補助金・助成金をAIで検索。農業・中小企業・移住・子育てなど、あなたに合った補助金をすぐに見つけられます。">
+  <meta name="theme-color" content="#1a56db">
+  <title>HojoSearch 島根版 - 島根県の補助金・助成金を探す</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ==================== 免責バナー ==================== -->
+  <div class="disclaimer-banner" role="note" aria-label="重要なお知らせ">
+    <strong>⚠ 重要：</strong>
+    このサービスはAI（Gemini）による情報提供です。内容の正確性・最新性は保証されません。
+    補助金の申請前に必ず<strong>公式サイト・担当窓口</strong>でご確認ください。
+  </div>
+
+  <!-- ==================== ヘッダー ==================== -->
+  <header class="site-header" role="banner">
+    <div class="header-inner">
+      <div class="header-logo">
+        <div class="logo-icon" aria-hidden="true">🏛</div>
+        <div class="logo-text">
+          <span class="logo-title">HojoSearch</span>
+          <span class="logo-sub">島根県の補助金・助成金検索</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== タブバー ==================== -->
+  <nav class="tabs-bar" role="navigation" aria-label="メインナビゲーション">
+    <div class="tabs-inner">
+      <button
+        class="tab-btn active"
+        data-tab="list"
+        role="tab"
+        aria-selected="true"
+        aria-controls="panel-list"
+      >
+        <span class="tab-icon" aria-hidden="true">📋</span>
+        補助金一覧
+      </button>
+      <button
+        class="tab-btn"
+        data-tab="search"
+        role="tab"
+        aria-selected="false"
+        aria-controls="panel-search"
+      >
+        <span class="tab-icon" aria-hidden="true">🤖</span>
+        AI逆引き検索
+      </button>
+    </div>
+  </nav>
+
+  <!-- ==================== メインコンテンツ ==================== -->
+  <main class="main-container" role="main">
+
+    <!-- ====== タブ1: 補助金一覧 ====== -->
+    <div id="panel-list" class="tab-panel" data-panel="list" role="tabpanel" aria-labelledby="tab-list">
+
+      <!-- ステータスバー -->
+      <div id="status-bar" class="status-bar">
+        <div>
+          <span class="fetch-time-label">情報取得日時：</span>
+          <span id="fetch-time">—</span>
+        </div>
+        <div class="status-actions">
+          <button id="refetch-btn" class="btn btn-outline btn-sm">
+            🔄 再取得
+          </button>
+        </div>
+      </div>
+
+      <!-- フィルターパネル -->
+      <section class="filter-panel" aria-label="絞り込み">
+        <div class="filter-row">
+          <div class="search-wrapper">
+            <span class="search-icon" aria-hidden="true">🔍</span>
+            <input
+              type="search"
+              id="search-input"
+              class="search-input"
+              placeholder="キーワードで検索（例：農業、IT導入、移住）"
+              aria-label="キーワード検索"
+              autocomplete="off"
+            >
+          </div>
+          <div class="filter-selects">
+            <select id="filter-category" class="filter-select" aria-label="カテゴリで絞り込み">
+              <option value="all">カテゴリ（全て）</option>
+            </select>
+            <select id="filter-issuer" class="filter-select" aria-label="発行元で絞り込み">
+              <option value="all">発行元（全て）</option>
+            </select>
+            <select id="filter-status" class="filter-select" aria-label="ステータスで絞り込み">
+              <option value="all">状態（全て）</option>
+              <option value="受付中">受付中</option>
+              <option value="受付予定">受付予定</option>
+              <option value="終了">終了</option>
+            </select>
+            <select id="sort-select" class="filter-select" aria-label="並び替え">
+              <option value="default">並び替え（おすすめ）</option>
+              <option value="deadline">締切が近い順</option>
+              <option value="amount_desc">金額が多い順</option>
+              <option value="amount_asc">金額が少ない順</option>
+            </select>
+          </div>
+        </div>
+        <div class="result-summary">
+          <span>
+            <span id="result-count" class="result-count">0件</span>
+            の補助金
+          </span>
+          <button id="reset-filters-btn" class="btn btn-secondary btn-sm">
+            リセット
+          </button>
+        </div>
+      </section>
+
+      <!-- カードグリッド -->
+      <div id="cards-grid" class="cards-grid" role="group" aria-label="補助金一覧" aria-live="polite">
+        <!-- カードはJS（ui.js）で描画 -->
+      </div>
+
+      <!-- 空状態 -->
+      <div id="empty-state" class="empty-state hidden" role="status">
+        <div class="state-icon" aria-hidden="true">🔍</div>
+        <h2 class="state-title">該当する補助金が見つかりません</h2>
+        <p class="state-desc">検索条件を変えるか、フィルターをリセットして再度お試しください。</p>
+        <button id="reset-filters-btn-2" class="btn btn-primary">
+          フィルターをリセット
+        </button>
+      </div>
+
+      <!-- エラー状態 -->
+      <div id="error-state" class="error-state hidden" role="alert">
+        <div class="state-icon" aria-hidden="true">❌</div>
+        <h2 class="state-title">データの取得に失敗しました</h2>
+        <p id="error-message"></p>
+        <button id="retry-btn" class="btn btn-primary">再試行する</button>
+      </div>
+
+    </div><!-- /panel-list -->
+
+    <!-- ====== タブ2: AI逆引き検索 ====== -->
+    <div id="panel-search" class="tab-panel hidden" data-panel="search" role="tabpanel" aria-labelledby="tab-search">
+
+      <div class="ai-search-panel">
+        <div class="ai-search-header">
+          <h2>🤖 AI逆引き検索</h2>
+          <p>
+            「農業を始めたい」「ITを導入したい」など、<strong>やりたいこと・困っていること</strong>を入力すると、
+            AIが最適な補助金・助成金を提案します。
+          </p>
+        </div>
+
+        <!-- 入力例チップ -->
+        <div class="ai-examples">
+          <p>入力例：</p>
+          <div class="example-chips" role="list" id="example-chips"></div>
+        </div>
+
+        <!-- 入力ボックス -->
+        <div class="ai-input-box">
+          <textarea
+            id="ai-intent-input"
+            class="ai-textarea"
+            placeholder="例：松江市で農業を始めたい。農機具の購入費用を補助してもらえる制度はありますか？"
+            aria-label="やりたいこと・困っていること"
+            rows="4"
+          ></textarea>
+          <div class="ai-input-footer">
+            <span class="ai-hint">Ctrl+Enter でも送信できます</span>
+            <button id="ai-search-btn" class="btn btn-primary">
+              🔍 検索する
+            </button>
+          </div>
+        </div>
+
+        <!-- ローディング -->
+        <div id="ai-loading" class="ai-loading hidden" role="status" aria-live="polite">
+          <div class="ai-loading-spinner" aria-hidden="true"></div>
+          <p>AIが最適な補助金を検索中です…</p>
+        </div>
+
+        <!-- 検索結果 -->
+        <div id="ai-results" class="ai-results hidden" aria-live="polite" aria-label="AI検索結果">
+          <!-- 結果はJS（ui.js）で描画 -->
+        </div>
+
+      </div>
+    </div><!-- /panel-search -->
+
+  </main>
+
+  <!-- ==================== フッター ==================== -->
+  <footer class="site-footer" role="contentinfo">
+    <p>
+      <strong style="color: white;">HojoSearch 島根版</strong> &nbsp;|&nbsp;
+      Powered by <a href="https://ai.google.dev/" target="_blank" rel="noopener noreferrer">Google Gemini API</a> &nbsp;|&nbsp;
+      <a href="https://www.pref.shimane.lg.jp/" target="_blank" rel="noopener noreferrer">島根県公式サイト</a>
+    </p>
+    <p style="margin-top: 8px;">
+      ※ 本サービスはAIによる情報提供であり、補助金の受給を保証するものではありません。<br>
+      申請の際は必ず公式サイト・担当窓口にてご確認ください。
+    </p>
+    <p style="margin-top: 8px; font-size: 11px;">
+      © 2026 HojoSearch 島根版 MVP v2.0
+    </p>
+  </footer>
+
+  <!-- ==================== 詳細モーダル ==================== -->
+  <div
+    id="detail-modal"
+    class="modal-overlay hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-title"
+    aria-hidden="true"
+  >
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-header-left">
+          <div class="modal-title-area">
+            <span id="modal-category-badge" class="badge badge-category"></span>
+            <span id="modal-status" class="modal-status"></span>
+          </div>
+          <h2 id="modal-title" class="modal-title"></h2>
+          <p id="modal-simple-desc" class="modal-simple-desc"></p>
+        </div>
+        <button id="close-detail-modal" class="modal-close" aria-label="閉じる">✕</button>
+      </div>
+
+      <div class="modal-body">
+
+        <!-- わかりやすい説明 -->
+        <div class="modal-section">
+          <div class="modal-label">詳細説明</div>
+          <p id="modal-description" class="modal-value"></p>
+        </div>
+
+        <!-- 基本情報グリッド -->
+        <div class="modal-grid">
+          <div class="modal-section">
+            <div class="modal-label">補助上限額</div>
+            <div id="modal-amount" class="modal-value" style="font-weight:700; font-size:18px; color:var(--color-primary);"></div>
+          </div>
+          <div class="modal-section">
+            <div class="modal-label">申請締切</div>
+            <div id="modal-deadline" class="modal-deadline-value"></div>
+          </div>
+          <div class="modal-section">
+            <div class="modal-label">発行元</div>
+            <div id="modal-issuer" class="modal-value"></div>
+          </div>
+          <div class="modal-section">
+            <div class="modal-label">対象地域</div>
+            <div id="modal-region" class="modal-value"></div>
+          </div>
+        </div>
+
+        <!-- 対象者 -->
+        <div class="modal-section">
+          <div class="modal-label">対象者</div>
+          <div id="modal-target-users"></div>
+        </div>
+
+        <!-- 申請条件 -->
+        <div class="modal-section">
+          <div class="modal-label">主な申請条件</div>
+          <p id="modal-requirements" class="modal-value"></p>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <a
+          id="modal-link"
+          class="modal-link"
+          href="#"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          公式サイトで申請する →
+        </a>
+        <p class="modal-disclaimer">
+          ※ AIによる情報です。申請前に必ず公式サイト・担当窓口でご確認ください。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== スクリプト ==================== -->
+  <script src="prompts.js" defer></script>
+  <script src="gemini.js" defer></script>
+  <script src="filter.js" defer></script>
+  <script src="ui.js" defer></script>
+  <script src="app.js" defer></script>
+
+</body>
+</html>
