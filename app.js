@@ -158,44 +158,61 @@ const APP = {
   /**
    * サーバーからデータを取得する
    *
-   * 優先順位:
-   *   1. Firestore 直接読み取り（認証不要・瞬時）← 通常はここで完結
-   *   2. update-subsidies Function  ← 初回のみ（Firestoreが空の場合）
+   * 通常: Firestore から直接読み取り（即時）
+   * 初回: Background Function をトリガー → Firestore をポーリング
    *
-   * データの鮮度管理は週次cron（scheduled-update）が担うため、
-   * クライアントは staleness チェックを行わない。
+   * Background Function はタイムアウトなし（最大15分）で動作するため、
+   * クライアントは 202 を受け取った後 Firestore にデータが現れるまで待つ。
    */
   async _fetchFromServer() {
-    // ---- Firebase Firestore から直接読み取り（認証不要）----
+    // ---- Firestore から直接読み取り（通常ケース・即時）----
     if (typeof FIREBASE !== 'undefined') {
       try {
-        const firestoreData = await FIREBASE.getSubsidies();
-        if (firestoreData?.subsidies?.length > 0) {
+        const data = await FIREBASE.getSubsidies();
+        if (data?.subsidies?.length > 0) {
           console.log('[APP] Firestoreからデータ取得');
-          return { ...firestoreData, source: 'firestore' };
+          return { ...data, source: 'firestore' };
         }
       } catch (err) {
         console.warn('[APP] Firestore読み取り失敗:', err.message);
       }
     }
 
-    // ---- Netlify Function: update-subsidies（初回セットアップのみ到達）----
-    console.log('[APP] Firestore空 → update-subsidies（初回セットアップ）');
-    const res = await fetch('/.netlify/functions/update-subsidies', {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    });
+    // ---- 初回のみ: Background Function をトリガー + Firestore ポーリング ----
+    console.log('[APP] Firestoreにデータなし → バックグラウンド更新をトリガー');
 
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new GeminiError(
-        data.error || `サーバーエラーが発生しました（HTTP ${res.status}）`,
-        res.status === 429 ? 'RATE_LIMIT' : 'API_ERROR',
-        (data.retryAfter || 60) * 1000
-      );
+    // Background Function を呼び出す（即座に202が返る・待たない）
+    fetch('/.netlify/functions/trigger-update-background', { method: 'POST' })
+      .catch(err => console.warn('[APP] トリガー失敗:', err.message));
+
+    // Firestore にデータが現れるまでポーリング（3秒×20回=最大60秒）
+    UI.showToast('補助金データを準備中です（初回のみ約30秒かかります）', 'info');
+    const POLL_INTERVAL_MS = 3000;
+    const POLL_MAX         = 20;
+
+    for (let i = 0; i < POLL_MAX; i++) {
+      await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+
+      const remaining = POLL_MAX - i - 1;
+      if (remaining > 0 && i % 3 === 2) {
+        UI.showToast(`データ準備中... あと約${remaining * 3}秒`, 'info');
+      }
+
+      if (typeof FIREBASE !== 'undefined') {
+        try {
+          const data = await FIREBASE.getSubsidies();
+          if (data?.subsidies?.length > 0) {
+            console.log(`[APP] ポーリング成功 (${i + 1}回目)`);
+            return { ...data, source: 'firestore' };
+          }
+        } catch { /* 次のポーリングへ */ }
+      }
     }
 
-    return await res.json();
+    throw new GeminiError(
+      'データの準備がタイムアウトしました。ページを再読み込みして再試行してください。',
+      'API_ERROR'
+    );
   },
 
   /** キャッシュデータを画面に適用 */
