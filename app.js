@@ -15,10 +15,8 @@ const APP_STATE = {
   allSubsidies: [],
   fetchedAt: null,
   isLoading: false,
-  currentTab: 'list',
   filters: { category: 'all', issuer: 'all', status: 'all', keyword: '' },
   sort: 'default',
-  rateLimitTimer: null,   // レート制限タイマーID
 };
 
 // ==================== メインモジュール ====================
@@ -36,7 +34,6 @@ const APP = {
 
   init() {
     APP._bindEvents();
-    APP._renderExampleChips();
     APP.loadSubsidies();
   },
 
@@ -134,21 +131,13 @@ const APP = {
         ? 'Firestoreキャッシュ'
         : result.source === 'firestore-stale'
         ? 'Firestoreキャッシュ（古い可能性あり）'
-        : 'Gemini AI（最新）';
+        : 'jGrants（最新）';
       UI.showToast(`${result.subsidies.length}件の補助金情報を取得しました（${sourceLabel}）`, 'success');
 
     } catch (err) {
       console.error('[APP] loadSubsidies error:', err);
       UI.hideRateLimitCountdown();
-
-      if (err instanceof GeminiError && err.code === 'RATE_LIMIT') {
-        UI.showRateLimitError(err.message, err.retryAfterMs, () => APP.loadSubsidies(true));
-      } else {
-        UI.showError(
-          err instanceof GeminiError ? err.message : `データ取得に失敗しました: ${err.message}`,
-          () => APP.loadSubsidies(true)
-        );
-      }
+      UI.showError(`データ取得に失敗しました: ${err.message}`, () => APP.loadSubsidies(true));
     } finally {
       APP_STATE.isLoading = false;
       APP._setFetchBtnState(false);
@@ -209,10 +198,7 @@ const APP = {
       }
     }
 
-    throw new GeminiError(
-      'データの準備がタイムアウトしました。ページを再読み込みして再試行してください。',
-      'API_ERROR'
-    );
+    throw new Error('データの準備がタイムアウトしました。ページを再読み込みして再試行してください。');
   },
 
   /** キャッシュデータを画面に適用 */
@@ -247,43 +233,9 @@ const APP = {
     if (subsidy) UI.openModal(subsidy);
   },
 
-  // ==================== AI逆引き検索 ====================
-
-  async runAISearch() {
-    const textarea = document.getElementById('ai-intent-input');
-    if (!textarea) return;
-
-    const intent = textarea.value.trim();
-    if (!intent) {
-      UI.showToast('やりたいこと・困っていることを入力してください', 'error');
-      return;
-    }
-
-    const btn = document.getElementById('ai-search-btn');
-    if (btn) { btn.disabled = true; btn.textContent = '検索中…'; }
-    UI.showAILoading();
-
-    try {
-      const result = await GEMINI_API.searchByIntent(intent, APP_STATE.allSubsidies, {
-        onRateLimit: (waitMs, attempt) => UI.showAIRateLimitMessage(waitMs, attempt),
-      });
-      UI.renderAIResults(result);
-    } catch (err) {
-      console.error('[APP] runAISearch error:', err);
-      UI.showAIError(err instanceof GeminiError ? err.message : `検索に失敗しました: ${err.message}`);
-    } finally {
-      UI.hideAILoading();
-      if (btn) { btn.disabled = false; btn.textContent = '🔍 検索する'; }
-    }
-  },
-
   // ==================== イベントバインド ====================
 
   _bindEvents() {
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => APP._switchTab(btn.getAttribute('data-tab')));
-    });
-
     const refetchBtn = document.getElementById('refetch-btn');
     if (refetchBtn) refetchBtn.addEventListener('click', () => APP.loadSubsidies(true));
 
@@ -335,50 +287,6 @@ const APP = {
     if (resetBtn)  resetBtn.addEventListener('click', doReset);
     if (resetBtn2) resetBtn2.addEventListener('click', doReset);
 
-    const aiBtn = document.getElementById('ai-search-btn');
-    if (aiBtn) aiBtn.addEventListener('click', () => APP.runAISearch());
-
-    const aiTextarea = document.getElementById('ai-intent-input');
-    if (aiTextarea) {
-      aiTextarea.addEventListener('keydown', e => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); APP.runAISearch(); }
-      });
-    }
-  },
-
-  _renderExampleChips() {
-    const container = document.getElementById('example-chips');
-    if (!container) return;
-    const examples = [
-      '益田市に移住して農業を始めたい',
-      '益田市で中小企業のIT化を進めたい',
-      '子育て中で家のリフォームをしたい',
-      '益田市で飲食店を新規開業したい',
-      '益田市で林業に就きたい',
-    ];
-    examples.forEach(text => {
-      const btn = document.createElement('button');
-      btn.className = 'example-chip';
-      btn.setAttribute('role', 'listitem');
-      btn.textContent = text;
-      btn.addEventListener('click', () => {
-        const ta = document.getElementById('ai-intent-input');
-        if (ta) ta.value = text;
-      });
-      container.appendChild(btn);
-    });
-  },
-
-  _switchTab(tab) {
-    APP_STATE.currentTab = tab;
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      const active = btn.getAttribute('data-tab') === tab;
-      btn.classList.toggle('active', active);
-      btn.setAttribute('aria-selected', active ? 'true' : 'false');
-    });
-    document.querySelectorAll('.tab-panel').forEach(panel => {
-      panel.classList.toggle('hidden', panel.getAttribute('data-panel') !== tab);
-    });
   },
 };
 

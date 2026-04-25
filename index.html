@@ -13,7 +13,7 @@
   <!-- ==================== 免責バナー ==================== -->
   <div class="disclaimer-banner" role="note" aria-label="重要なお知らせ">
     <strong>⚠ 重要：</strong>
-    このサービスはAI（Gemini）による情報提供です。内容の正確性・最新性は保証されません。
+    このサービスはjGrants APIによる情報提供です。内容の正確性・最新性は保証されません。
     補助金の申請前に必ず<strong>公式サイト・担当窓口</strong>でご確認ください。
   </div>
 
@@ -30,37 +30,12 @@
     </div>
   </header>
 
-  <!-- ==================== タブバー ==================== -->
-  <nav class="tabs-bar" role="navigation" aria-label="メインナビゲーション">
-    <div class="tabs-inner">
-      <button
-        class="tab-btn active"
-        data-tab="list"
-        role="tab"
-        aria-selected="true"
-        aria-controls="panel-list"
-      >
-        <span class="tab-icon" aria-hidden="true">📋</span>
-        補助金一覧
-      </button>
-      <button
-        class="tab-btn"
-        data-tab="search"
-        role="tab"
-        aria-selected="false"
-        aria-controls="panel-search"
-      >
-        <span class="tab-icon" aria-hidden="true">🤖</span>
-        AI逆引き検索
-      </button>
-    </div>
-  </nav>
 
   <!-- ==================== メインコンテンツ ==================== -->
   <main class="main-container" role="main">
 
-    <!-- ====== タブ1: 補助金一覧 ====== -->
-    <div id="panel-list" class="tab-panel" data-panel="list" role="tabpanel" aria-labelledby="tab-list">
+    <!-- ====== 補助金一覧 ====== -->
+    <div id="panel-list">
 
       <!-- ステータスバー -->
       <div id="status-bar" class="status-bar">
@@ -146,54 +121,6 @@
 
     </div><!-- /panel-list -->
 
-    <!-- ====== タブ2: AI逆引き検索 ====== -->
-    <div id="panel-search" class="tab-panel hidden" data-panel="search" role="tabpanel" aria-labelledby="tab-search">
-
-      <div class="ai-search-panel">
-        <div class="ai-search-header">
-          <h2>🤖 AI逆引き検索</h2>
-          <p>
-            「農業を始めたい」「ITを導入したい」など、<strong>やりたいこと・困っていること</strong>を入力すると、
-            AIが最適な補助金・助成金を提案します。
-          </p>
-        </div>
-
-        <!-- 入力例チップ -->
-        <div class="ai-examples">
-          <p>入力例：</p>
-          <div class="example-chips" role="list" id="example-chips"></div>
-        </div>
-
-        <!-- 入力ボックス -->
-        <div class="ai-input-box">
-          <textarea
-            id="ai-intent-input"
-            class="ai-textarea"
-            placeholder="例：益田市で農業を始めたい。農機具の購入費用を補助してもらえる制度はありますか？"
-            aria-label="やりたいこと・困っていること"
-            rows="4"
-          ></textarea>
-          <div class="ai-input-footer">
-            <span class="ai-hint">Ctrl+Enter でも送信できます</span>
-            <button id="ai-search-btn" class="btn btn-primary">
-              🔍 検索する
-            </button>
-          </div>
-        </div>
-
-        <!-- ローディング -->
-        <div id="ai-loading" class="ai-loading hidden" role="status" aria-live="polite">
-          <div class="ai-loading-spinner" aria-hidden="true"></div>
-          <p>AIが最適な補助金を検索中です…</p>
-        </div>
-
-        <!-- 検索結果 -->
-        <div id="ai-results" class="ai-results hidden" aria-live="polite" aria-label="AI検索結果">
-          <!-- 結果はJS（ui.js）で描画 -->
-        </div>
-
-      </div>
-    </div><!-- /panel-search -->
 
   </main>
 
@@ -201,7 +128,7 @@
   <footer class="site-footer" role="contentinfo">
     <p>
       <strong style="color: white;">HojoSearch 益田版</strong> &nbsp;|&nbsp;
-      Powered by <a href="https://ai.google.dev/" target="_blank" rel="noopener noreferrer">Google Gemini API</a> &nbsp;|&nbsp;
+      データ提供: <a href="https://jgrants-portal.go.jp/" target="_blank" rel="noopener noreferrer">jGrants（補助金申請システム）</a> &nbsp;|&nbsp;
       <a href="https://www.city.masuda.lg.jp/" target="_blank" rel="noopener noreferrer">益田市公式サイト</a>
     </p>
     <p style="margin-top: 8px;">
@@ -296,8 +223,6 @@
 
   <!-- ==================== スクリプト ==================== -->
   <script src="firebase.js" defer></script>
-  <script src="prompts.js" defer></script>
-  <script src="gemini.js" defer></script>
   <script src="filter.js" defer></script>
   <script src="ui.js" defer></script>
   <script src="app.js" defer></script>

@@ -4,20 +4,15 @@
  * Netlify Background Function — タイムアウトなし（最大15分）
  *
  * データ取得フロー:
- *   1. jGrants API     → 島根県・国の補助金（公式・構造化データ）
- *   2. Gemini Search   → 益田市独自の補助金（jGrantsにない分を補完）
- *   3. マージ・重複除去 → Firestore に保存
+ *   1. jGrants API で島根県・益田市の補助金を取得
+ *   2. Firestore に保存
  *
  * ファイル名の "-background" サフィックスが Netlify に Background Function
  * として認識させるシグナル（設定不要）。
  */
 
 const {
-  SCRAPE_URLS,
-  scrapePages,
   fetchFromJGrants,
-  fetchFromGemini,
-  mergeSubsidies,
   getGoogleAccessToken,
   readFirestore,
   writeFirestore,
@@ -26,12 +21,11 @@ const {
 exports.handler = async () => {
   console.log('[trigger-update] バックグラウンド更新開始:', new Date().toISOString());
 
-  const geminiKey = process.env.GEMINI_API_KEY;
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const saRaw     = process.env.FIREBASE_SERVICE_ACCOUNT;
 
-  if (!geminiKey || !projectId || !saRaw) {
-    console.error('[trigger-update] 環境変数未設定');
+  if (!projectId || !saRaw) {
+    console.error('[trigger-update] 環境変数未設定 (FIREBASE_PROJECT_ID / FIREBASE_SERVICE_ACCOUNT)');
     return;
   }
 
@@ -57,62 +51,28 @@ exports.handler = async () => {
     console.warn('[trigger-update] Firestore確認失敗（続行）:', err.message);
   }
 
-  // ── フェーズ1: jGrants / スクレイピング / OAuth を並列実行 ──────────────
-  let jGrantsResult = { subsidies: [] };
-  let scrapedContent = '';
-  let accessToken;
-
+  // jGrants 取得 と OAuth を並列実行
+  let jGrantsResult, accessToken;
   try {
-    [jGrantsResult, scrapedContent, accessToken] = await Promise.all([
+    [jGrantsResult, accessToken] = await Promise.all([
       fetchFromJGrants(),
-      scrapePages(SCRAPE_URLS),
       getGoogleAccessToken(serviceAccount),
     ]);
-    console.log(
-      `[trigger-update] jGrants: ${jGrantsResult.subsidies.length}件`,
-      `/ スクレイピング: ${scrapedContent.length}文字`
-    );
   } catch (err) {
-    console.warn('[trigger-update] フェーズ1 一部失敗（続行）:', err.message);
-    // accessToken だけは必須なので個別に再取得
-    if (!accessToken) {
-      try {
-        accessToken = await getGoogleAccessToken(serviceAccount);
-      } catch (e) {
-        console.error('[trigger-update] OAuth取得失敗:', e.message);
-        return;
-      }
-    }
-  }
-
-  // ── フェーズ2: Gemini で益田市独自補助金を取得 ───────────────────────────
-  let geminiResult = { subsidies: [] };
-  try {
-    geminiResult = await fetchFromGemini(geminiKey, scrapedContent);
-  } catch (err) {
-    console.warn('[trigger-update] Gemini失敗（jGrantsのみで続行）:', err.message);
-  }
-
-  // ── フェーズ3: jGrants（優先）＋ Gemini をマージ・重複除去 ───────────────
-  const allSubsidies = mergeSubsidies([
-    jGrantsResult.subsidies,  // jGrantsを先に入れることで重複時に優先される
-    geminiResult.subsidies,
-  ]);
-
-  if (allSubsidies.length === 0) {
-    console.error('[trigger-update] 取得件数0件 → 保存をスキップ');
+    console.error('[trigger-update] 取得失敗:', err.message);
     return;
   }
 
-  // ── フェーズ4: Firestore 保存 ─────────────────────────────────────────────
+  if (jGrantsResult.subsidies.length === 0) {
+    console.error('[trigger-update] jGrants 取得件数0件 → 保存をスキップ');
+    return;
+  }
+
+  // Firestore 保存
   const fetchedAt = new Date().toISOString();
   try {
-    await writeFirestore(projectId, accessToken, allSubsidies, fetchedAt);
-    console.log(
-      `[trigger-update] 完了: ${allSubsidies.length}件`,
-      `(jGrants: ${jGrantsResult.subsidies.length}件 + Gemini: ${geminiResult.subsidies.length}件)`,
-      fetchedAt
-    );
+    await writeFirestore(projectId, accessToken, jGrantsResult.subsidies, fetchedAt);
+    console.log(`[trigger-update] 完了: ${jGrantsResult.subsidies.length}件, ${fetchedAt}`);
   } catch (err) {
     console.error('[trigger-update] Firestore書き込み失敗:', err.message);
   }
