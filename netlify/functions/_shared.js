@@ -42,7 +42,7 @@ const SCRAPE_URLS = [
   'https://www.city.masuda.lg.jp/soshikikarasagasu/kensetsubu/kenchikuka/6714.html',
   'https://www.city.masuda.lg.jp/soshikikarasagasu/kensetsubu/kenchikuka/6/2953.html',
   // 移住・空き家
-  'https://www.city.masuda.lg.jp/soshikikarasagasu/seisakukikakukyoku/chiikishinkouka/3/1241.html',
+  'https://www.city.masuda.lg.jp/soshikikarasagaru/seisakukikakukyoku/chiikishinkouka/3/1241.html',
   'https://www.city.masuda.lg.jp/soshikikarasagasu/seisakukikakukyoku/chiikishinkouka/3/1242.html',
   // 環境・エネルギー
   'https://www.city.masuda.lg.jp/soshikikarasagasu/fukushikankyobu/kankyoeiseika/4/2574.html',
