@@ -11,7 +11,7 @@
  * として認識させるシグナル（設定不要）。
  */
 
-const { fetchFromGemini, getGoogleAccessToken, readFirestore, writeFirestore } = require('./_shared');
+const { SCRAPE_URLS, scrapePages, fetchFromGemini, getGoogleAccessToken, readFirestore, writeFirestore } = require('./_shared');
 
 exports.handler = async () => {
   console.log('[trigger-update] バックグラウンド更新開始:', new Date().toISOString());
@@ -49,15 +49,25 @@ exports.handler = async () => {
     console.warn('[trigger-update] Firestore確認失敗（続行）:', err.message);
   }
 
-  // Gemini呼び出しとOAuth取得を並列実行
-  let geminiResult, accessToken;
+  // 益田市公式サイトをスクレイピング + OAuth取得を並列実行
+  let scrapedContent, accessToken;
   try {
-    [geminiResult, accessToken] = await Promise.all([
-      fetchFromGemini(geminiKey),
+    [scrapedContent, accessToken] = await Promise.all([
+      scrapePages(SCRAPE_URLS),
       getGoogleAccessToken(serviceAccount),
     ]);
+    console.log(`[trigger-update] スクレイピング完了 (${scrapedContent.length}文字)`);
   } catch (err) {
-    console.error('[trigger-update] 取得失敗:', err.message);
+    console.error('[trigger-update] 前処理失敗:', err.message);
+    scrapedContent = '';
+  }
+
+  // スクレイピング結果をもとにGeminiで構造化
+  let geminiResult;
+  try {
+    geminiResult = await fetchFromGemini(geminiKey, scrapedContent);
+  } catch (err) {
+    console.error('[trigger-update] Gemini失敗:', err.message);
     return;
   }
 

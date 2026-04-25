@@ -30,5 +30,13 @@
   timeout = 26
 
 # scheduled-update: 毎週月曜 6:00 JST（= 日曜 21:00 UTC）に自動実行
+# この関数はバックグラウンド関数を起動するだけなのでタイムアウト5秒で十分
 [functions.scheduled-update]
   schedule = "0 21 * * 0"
+  timeout = 10
+
+# trigger-update-background: Netlify Background Function（最大15分）
+# ファイル名の "-background" サフィックスが自動認識のシグナル（設定不要だが明示）
+# Gemini Search Grounding + Firestore書き込みをここで実行する
+[functions.trigger-update-background]
+  timeout = 900
