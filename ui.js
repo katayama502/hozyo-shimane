@@ -102,6 +102,7 @@ const UI = {
     const card = document.createElement('article');
     card.className = 'card subsidy-card';
     card.setAttribute('data-id', UI.escape(subsidy.id));
+    card.setAttribute('data-category', subsidy.category || '');
     card.setAttribute('role', 'button');
     card.setAttribute('tabindex', '0');
     card.setAttribute('aria-label', subsidy.title + ' の詳細を見る');
