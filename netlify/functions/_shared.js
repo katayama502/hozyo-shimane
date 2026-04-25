@@ -3,16 +3,14 @@
  * scheduled-update.js / trigger-update-background.js 共通ロジック
  *
  * データ取得フロー:
- *   1. Gemini Google Search Grounding で益田市公式サイトの補助金情報を直接検索
- *   2. 取得できた場合はスクレイピング結果も補足として渡す
+ *   1. 益田市公式サイトの各補助金ページを並列スクレイピング
+ *   2. 取得したテキストを Gemini に渡して構造化JSON抽出
  *   3. ページにない制度は Gemini の知識で補完（島根県・国の制度）
- *
- * ※ スクレイピングは補助的な位置づけ。失敗しても Search Grounding で続行。
  */
 
 const { webcrypto } = require('node:crypto');
 
-const GEMINI_TIMEOUT_MS = 55000; // Search Grounding は応答に時間がかかる
+const GEMINI_TIMEOUT_MS = 25000;
 const GEMINI_BASE_URL   = 'https://generativelanguage.googleapis.com/v1beta/models';
 const GEMINI_MODELS     = [
   { id: 'gemini-2.5-flash' },
@@ -105,16 +103,19 @@ async function scrapePages(urls) {
 // ==================== Gemini プロンプト ====================
 
 function buildSubsidyPrompt(scrapedContent) {
-  const supplementSection = scrapedContent && scrapedContent.length > 100
-    ? `\n\n【補足情報（公式サイトから取得済み）】\n${scrapedContent.slice(0, 8000)}`
-    : '';
+  const realDataSection = scrapedContent
+    ? `以下は益田市公式サイトから取得した実際の補助金・支援制度の情報です：
+
+${scrapedContent}
+
+---
+上記の実際のページ内容をもとに補助金情報を構造化してください。
+ページ内に記載のない制度（農業支援、移住支援、子育て支援、島根県・国の補助金など）も加え、合計25件になるよう補完してください。`
+    : `益田市・島根県・国の補助金を25件リストアップしてください。`;
 
   return `あなたは島根県益田市の補助金・助成金の専門家です。
 
-以下のサイトを検索して、益田市・島根県・国の補助金情報を収集してください：
-- site:city.masuda.lg.jp 補助金 助成金 支援
-- 島根県 益田市 補助金 2025 2026
-- 益田市 移住 創業 住宅 農業 補助金${supplementSection}
+${realDataSection}
 
 収集した情報をもとに、現在受付中または受付予定の補助金を25件リストアップし、
 以下のJSON形式のみで返してください（説明文・マークダウン・コードブロック等は一切不要）：
@@ -128,23 +129,6 @@ function buildSubsidyPrompt(scrapedContent) {
 - maxAmount: 数値（不明は0）
 - deadline: "YYYY-MM-DD" または null
 - status: "受付中"/"受付予定"/"終了"`;
-}
-
-/**
- * レスポンステキストからJSONを抽出する
- * Geminiがマークダウンのコードブロックで囲んで返す場合に対応
- */
-function extractJson(text) {
-  // ```json ... ``` ブロックを抽出
-  const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeBlock) return JSON.parse(codeBlock[1].trim());
-
-  // { ... } の最外殻を抽出
-  const start = text.indexOf('{');
-  const end   = text.lastIndexOf('}');
-  if (start !== -1 && end !== -1) return JSON.parse(text.slice(start, end + 1));
-
-  return JSON.parse(text);
 }
 
 // ==================== Gemini API ====================
