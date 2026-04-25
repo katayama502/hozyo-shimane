@@ -1,43 +1,31 @@
 /**
  * netlify/functions/scheduled-update.js
  *
- * 週次cron（毎週月曜 6:00 JST）で Gemini → Firestore を自動更新。
- * ユーザーは常に Firestore から瞬時に取得できる。
+ * 週次cron（毎週月曜 6:00 JST）に自動実行。
+ * この関数自体はバックグラウンド関数を起動するだけで即リターンする。
+ * 実際の Gemini → Firestore 処理は trigger-update-background.js が担う。
+ *
+ * 理由: scheduled-update はタイムアウト26秒のため、Gemini+スクレイピングを
+ * 直接実行すると必ず失敗する。バックグラウンド関数は最大15分動作可能。
  *
  * スケジュール設定: netlify.toml の [functions.scheduled-update] を参照
  *
  * 必要な環境変数:
- *   GEMINI_API_KEY           - Gemini API キー
- *   FIREBASE_PROJECT_ID      - Firebase プロジェクトID
- *   FIREBASE_SERVICE_ACCOUNT - サービスアカウントJSONの全文字列
+ *   URL - Netlify サイトURL（自動設定）
  */
 
 const { SCRAPE_URLS, scrapePages, fetchFromGemini, getGoogleAccessToken, writeFirestore } = require('./_shared');
 
 exports.handler = async () => {
-  console.log('[scheduled-update] 週次更新開始:', new Date().toISOString());
+  console.log('[scheduled-update] 週次更新: バックグラウンド関数を起動', new Date().toISOString());
 
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const saRaw     = process.env.FIREBASE_SERVICE_ACCOUNT;
-
-  if (!geminiKey || !projectId || !saRaw) {
-    const missing = [
-      !geminiKey ? 'GEMINI_API_KEY' : null,
-      !projectId ? 'FIREBASE_PROJECT_ID' : null,
-      !saRaw     ? 'FIREBASE_SERVICE_ACCOUNT' : null,
-    ].filter(Boolean).join(', ');
-    console.error('[scheduled-update] 環境変数未設定:', missing);
-    return { statusCode: 500, body: `環境変数未設定: ${missing}` };
+  const siteUrl = process.env.URL;
+  if (!siteUrl) {
+    console.error('[scheduled-update] URL環境変数が未設定（Netlifyでは自動設定されるはず）');
+    return { statusCode: 500, body: 'URL環境変数が未設定' };
   }
 
-  let serviceAccount;
-  try {
-    serviceAccount = JSON.parse(saRaw);
-  } catch {
-    console.error('[scheduled-update] FIREBASE_SERVICE_ACCOUNT のJSON形式が不正');
-    return { statusCode: 500, body: 'FIREBASE_SERVICE_ACCOUNT のJSON形式が不正です' };
-  }
+  const bgUrl = `${siteUrl}/.netlify/functions/trigger-update-background`;
 
   // 益田市公式サイトをスクレイピング + OAuth取得を並列実行
   let scrapedContent, accessToken;
@@ -60,16 +48,4 @@ exports.handler = async () => {
     console.error('[scheduled-update] Gemini失敗:', err.message);
     return { statusCode: 502, body: `Gemini失敗: ${err.message}` };
   }
-
-  const fetchedAt = new Date().toISOString();
-
-  try {
-    await writeFirestore(projectId, accessToken, geminiResult.subsidies, fetchedAt);
-  } catch (err) {
-    console.error('[scheduled-update] Firestore書き込み失敗:', err.message);
-    return { statusCode: 502, body: `Firestore書き込み失敗: ${err.message}` };
-  }
-
-  console.log(`[scheduled-update] 週次更新完了: ${geminiResult.subsidies.length}件`);
-  return { statusCode: 200, body: `更新完了: ${geminiResult.subsidies.length}件` };
 };

@@ -117,7 +117,8 @@ ${scrapedContent}
 
 ${realDataSection}
 
-以下のJSON形式のみで返してください（説明文・マークダウン等は一切不要）：
+収集した情報をもとに、現在受付中または受付予定の補助金を25件リストアップし、
+以下のJSON形式のみで返してください（説明文・マークダウン・コードブロック等は一切不要）：
 
 {"subsidies":[{"id":"masuda-001","title":"補助金の正式名称","simpleDescription":"わかりやすい説明60文字以内","description":"詳細説明200文字以内","category":"中小企業・創業支援","targetUsers":["中小企業","個人事業主"],"maxAmount":1000000,"deadline":"2026-06-30","issuer":"益田市","region":"益田市","applicationUrl":"https://www.city.masuda.lg.jp/","requirements":"申請条件100文字以内","status":"受付中"}]}
 
@@ -143,10 +144,12 @@ async function callGemini(modelId, prompt, apiKey) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
+        // Google Search Grounding: Gemini自身がGoogleを検索してリアルデータを取得
+        // ※ tools使用時は responseMimeType: 'application/json' は指定不可
+        tools: [{ google_search: {} }],
         generationConfig: {
           temperature: 0.1,
           maxOutputTokens: 4096,
-          responseMimeType: 'application/json',
         },
       }),
       signal: controller.signal,
@@ -188,8 +191,8 @@ async function fetchFromGemini(apiKey, scrapedContent = '') {
 
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
     let parsed;
-    try { parsed = JSON.parse(text); }
-    catch { throw new Error('GeminiのレスポンスがJSONではありません'); }
+    try { parsed = extractJson(text); }
+    catch { throw new Error('GeminiのレスポンスがJSONではありません: ' + text.slice(0, 200)); }
 
     if (!Array.isArray(parsed?.subsidies)) {
       throw new Error('Geminiレスポンスにsubsidies配列がありません');
